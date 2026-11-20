@@ -1,0 +1,59 @@
+<!-- 文件职责：太阳雨渔港游戏入口、模式按钮及触屏控制；对应指导书第 0、3、8、9 章和游戏扩展。 -->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#BFE6FF" />
+  <title>太阳雨 · 小渔港 — 可步行游戏地图</title>
+  <style>
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: linear-gradient(#4FA3E8, #BFE6FF); font-family: system-ui, sans-serif; }
+    #app { position: fixed; inset: 0; }
+    #app canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; background: linear-gradient(#4FA3E8, #BFE6FF); color: #fff; letter-spacing: .15em; transition: opacity .45s; pointer-events: none; }
+    #loading.hidden { opacity: 0; }
+    #caption { position: fixed; left: 20px; bottom: 18px; max-width: calc(100vw - 40px); padding: 10px 14px; border-radius: 12px; color: #2B2A3A; background: rgba(246, 241, 231, .82); box-shadow: 0 5px 20px #2b2a3a18; font-size: 13px; line-height: 1.5; pointer-events: none; }
+    #caption strong { display: block; font-size: 15px; }
+    #perf { position: fixed; top: 12px; left: 12px; color: #2B2A3A; background: #f6f1e7bb; border-radius: 8px; padding: 4px 7px; font: 11px/1.2 monospace; pointer-events: none; }
+    #game-status { position: fixed; top: 12px; left: 118px; color: #2B2A3A; background: #f6f1e7bb; border-radius: 8px; padding: 4px 7px; font: 11px/1.2 monospace; pointer-events: none; }
+    #mode-toggle { position: fixed; top: 12px; right: 12px; border: 1px solid #2B2A3A55; border-radius: 10px; background: #F6F1E7e8; color: #2B2A3A; padding: 8px 12px; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+    #mode-toggle:hover { background: #fff; }
+    #map-toggle { position: fixed; top: 12px; right: 112px; border: 1px solid #2B2A3A55; border-radius: 10px; background: #F6F1E7e8; color: #2B2A3A; padding: 8px 12px; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+    #map-toggle:hover { background: #fff; }
+    #minimap-panel { position: fixed; top: 56px; right: 12px; padding: 7px; border: 1px solid #2B2A3A55; border-radius: 16px; background: #F6F1E7e8; box-shadow: 0 5px 20px #2b2a3a22; }
+    #minimap { display: block; width: 180px; height: 180px; }
+    #joystick { display: none; position: fixed; left: 18px; bottom: 24px; width: 120px; height: 120px; border: 2px solid #2B2A3A66; border-radius: 50%; background: #f6f1e780; touch-action: none; user-select: none; }
+    #stick { position: absolute; width: 50px; height: 50px; left: 33px; top: 33px; border-radius: 50%; background: #D9574Acc; border: 2px solid #2B2A3A88; pointer-events: none; }
+    #jump-btn { display: none; position: fixed; right: 20px; bottom: 42px; width: 76px; height: 76px; border: 2px solid #2B2A3A66; border-radius: 50%; background: #F6F1E7cc; color: #2B2A3A; font: 600 15px system-ui, sans-serif; touch-action: none; }
+    @media (pointer: coarse), (max-width: 700px) {
+      body.walking #joystick, body.walking #jump-btn { display: block; }
+      #caption { left: 10px; right: 10px; top: 52px; bottom: auto; max-width: none; font-size: 11px; }
+      #game-status { top: 108px; left: 10px; }
+      #minimap-panel { top: 134px; }
+      #minimap { width: 155px; height: 155px; }
+    }
+  </style>
+  <script type="importmap">
+  { "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  } }
+  </script>
+</head>
+<body>
+  <main id="app" aria-label="可旋转查看的微缩渔港场景"></main>
+  <div id="loading" role="status">正在搭建小渔港…</div>
+  <div id="caption"><strong>太阳雨 · 小渔港</strong>拖动旋转 / 滚轮或双指缩放 / 右键或双指平移 / 双击复位 · 扩大版港口</div>
+  <div id="perf" aria-live="off">Draw Calls: —</div>
+  <div id="game-status" aria-live="off">渔村草地 · X -3.2 · Z 8.8</div>
+  <button id="mode-toggle" type="button">切换观景</button>
+  <button id="map-toggle" type="button" aria-expanded="false" aria-controls="minimap-panel">地图</button>
+  <aside id="minimap-panel" aria-label="渔港地图" hidden><canvas id="minimap" width="220" height="220" aria-label="渔港位置与朝向"></canvas></aside>
+  <div id="joystick" role="group" aria-label="移动摇杆"><div id="stick"></div></div>
+  <button id="jump-btn" type="button" aria-label="跳跃">跳跃</button>
+  <script type="module" src="./main.js?v=map-2"></script>
+</body>
+</html>

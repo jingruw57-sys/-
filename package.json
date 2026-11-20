@@ -1,0 +1,12 @@
+{
+  "name": "solar-rain-fishing-harbor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:portable": "node tools/build-portable.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "three": "0.160.0"
+  }
+}
