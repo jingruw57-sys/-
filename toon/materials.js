@@ -53,8 +53,17 @@ export function makeToonMaterial(color, options = {}) {
       vec3 wetBase = diffuseColor.rgb * mix(1.0, 0.9, uWetness);
       vec3 darkColor = wetBase * cool;
       vec3 midColor = mix(wetBase, darkColor, 0.40) * 1.12;
-      vec3 lightColor = wetBase * warm * 1.55;
+      float sunIntensity = directionalLights[0].color.r / 3.0;
+      vec3 lightColor = wetBase * warm * 1.55 * sunIntensity;
       vec3 toonColor = mix(mix(darkColor, midColor, middleBand), lightColor, lightBand);
+      // 色阶着色使用自己的光照计算，显式加入半球光和反向补光。
+      #if NUM_HEMI_LIGHTS > 0
+        toonColor += wetBase * getHemisphereLightIrradiance(hemisphereLights[0], toonNormal) * 0.18 * (1.0 - lightBand);
+      #endif
+      #if NUM_DIR_LIGHTS > 1
+        float fill = max(dot(toonNormal, directionalLights[1].direction), 0.0);
+        toonColor += wetBase * directionalLights[1].color * fill * 0.38 * (1.0 - lightBand);
+      #endif
       float rim = smoothstep(0.60, 0.65, pow(1.0 - max(dot(toonNormal, toonView), 0.0), 3.0));
       rim *= step(0.3, dot(-toonView, toonLight));
       toonColor += rim * uSunColor * 0.6;
@@ -63,14 +72,14 @@ export function makeToonMaterial(color, options = {}) {
       float specular = pow(max(dot(toonNormal, halfVector), 0.0), 80.0);
       float hardHighlight = smoothstep(0.48, 0.52, specular);
       float upward = smoothstep(0.5, 0.7, worldNormal.y);
-      toonColor += uSunColor * 1.4 * hardHighlight * upward * uWetness * toonShadow;
+      toonColor += uSunColor * 1.4 * hardHighlight * upward * uWetness * toonShadow * sunIntensity;
       reflectedLight.directDiffuse = toonColor;
     `);
-    // 原有半球光会冲淡色阶，M2 的补光已包含在三档颜色中。
+    // 补光已在上面加入，避免用默认光照再计算一次。
     shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_maps>', '');
     shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', '');
   };
-  material.customProgramCacheKey = () => 'solar-rain-toon-v2';
+  material.customProgramCacheKey = () => 'solar-rain-toon-v3';
   materialCache.set(key, material);
   return material;
 }

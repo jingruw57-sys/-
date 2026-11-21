@@ -138,7 +138,6 @@ export function createPlayerController(scene, camera) {
   let jumpVelocity = 0;
   let jumpHeight = 0;
   let walkSurface = surfaceAt(character.root.position.x, character.root.position.z);
-  const status = document.querySelector('#game-status');
   window.addEventListener('keydown', (event) => {
     const code = event.code;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(code)) event.preventDefault();
@@ -192,7 +191,6 @@ export function createPlayerController(scene, camera) {
     character.arms[0].rotation.x = -gait * 0.7;
     character.arms[1].rotation.x = gait * 0.7;
     character.figure.position.y = moving ? Math.abs(Math.sin(stride)) * 0.04 : Math.sin(performance.now() * 0.002) * 0.015;
-    status.textContent = `${walkSurface?.name ?? '渔村'} · X ${root.position.x.toFixed(1)} · Z ${root.position.z.toFixed(1)}`;
   }
 
   return {
@@ -200,5 +198,6 @@ export function createPlayerController(scene, camera) {
     update,
     setActive(value) { active = value; keys.clear(); joystick.x = 0; joystick.y = 0; },
     get active() { return active; },
+    get surfaceName() { return walkSurface?.name ?? '渔村草地'; },
   };
 }

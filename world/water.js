@@ -38,7 +38,7 @@ const coastSegments = COAST.slice(0, -1).map(([x, z], i) => {
 }).join('\n');
 const coastGLSL = `float shoreZ(float x) { ${coastSegments} return 0.0; }`;
 
-export function createWater(scene, weather) {
+export function createWater(scene, weather, contactShadow) {
   const uniforms = THREE.UniformsUtils.merge([
     THREE.UniformsLib.lights,
     THREE.UniformsLib.fog,
@@ -55,6 +55,8 @@ export function createWater(scene, weather) {
   ]);
   // merge 会克隆 uniform；重新接回共享引用，便于天气系统统一更新。
   for (const name of ['uTime', 'uRainDensity', 'uSunDir', 'uSunColor']) uniforms[name] = weather[name];
+  uniforms.uContactShadow = { value: contactShadow.texture };
+  uniforms.uContactDiameter = { value: contactShadow.diameter };
   const material = new THREE.ShaderMaterial({
     uniforms, lights: true, fog: true, side: THREE.FrontSide,
     vertexShader: `
@@ -92,6 +94,8 @@ export function createWater(scene, weather) {
       uniform vec3 uSky;
       uniform vec3 uFoam;
       uniform float uRainDensity;
+      uniform sampler2D uContactShadow;
+      uniform float uContactDiameter;
       varying vec3 vWorldPos;
       ${waveGLSL}
       ${coastGLSL}
@@ -146,6 +150,9 @@ export function createWater(scene, weather) {
           shadow = getShadow(directionalShadowMap[0], s.shadowMapSize, s.shadowBias, s.shadowRadius, vDirectionalShadowCoord[0]);
         #endif
         color *= mix(0.86, 1.0, shadow);
+        vec2 contactUV = vec2(p.x, -p.y) / uContactDiameter + 0.5;
+        float contact = texture2D(uContactShadow, contactUV).a;
+        color *= 1.0 - 0.32 * contact * smoothstep(0.0, 0.45, offshore);
         gl_FragColor = vec4(color, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

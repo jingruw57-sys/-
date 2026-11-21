@@ -6,30 +6,36 @@ import { addBoats, updateBoats } from './world/boats.js';
 import { addHarbor } from './world/harbor.js';
 import { addHouses } from './world/houses.js';
 import { addProps, updateProps } from './world/props.js';
-import { createWater, COAST } from './world/water.js';
-import { createWeatherUniforms } from './weather/shared.js';
+import { createWater, COAST } from './world/water.js?v=map-3';
+import { createWeatherUniforms } from './weather/shared.js?v=map-3';
 import { createRain } from './weather/rain.js';
 import { createSplashes } from './weather/splashes.js';
 import { createPuddles } from './world/puddles.js';
 import { ISLAND_R, SAFE_R, WATER_Y } from './world/constants.js';
 import { mergeToonMeshes } from './world/merge.js';
-import { createPlayerController } from './game/player.js?v=map-2';
+import { createPlayerController } from './game/player.js?v=map-3';
 import { addRoutes } from './world/routes.js';
 import { createMinimap } from './game/minimap.js';
 
 const app = document.querySelector('#app');
 const loading = document.querySelector('#loading');
 const perf = document.querySelector('#perf');
+const gameStatus = document.querySelector('#game-status');
+const gameCoords = document.querySelector('#game-coords');
+
+// 系统开启「减弱动效」时压低雨量、湿润度与风力，避免长时间高频运动引起不适。
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 const scene = new THREE.Scene();
 const clock = new THREE.Clock();
 const STATE = {
   sunDir: new THREE.Vector3(0.52, 0.72, -0.46).normalize(),
   sunColor: new THREE.Color('#FFF1C9'),
   time: 0,
-  rain: 0.7,
-  wetness: 0.7,
+  rain: reduceMotion ? 0.28 : 0.7,
+  wetness: reduceMotion ? 0.45 : 0.7,
   windAngle: 0.6,
-  windStrength: 0.14,
+  windStrength: reduceMotion ? 0.07 : 0.14,
 };
 
 // 第 3.1 节：较硬的阴影与亮度设置；像素比限制有利于集显。
@@ -39,9 +45,10 @@ function setupRenderer() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  // 柔和阴影更贴近插画感；描边仍在，不会糊掉轮廓。
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   app.appendChild(renderer.domElement);
   return renderer;
 }
@@ -51,6 +58,8 @@ const renderer = setupRenderer();
 // 第 3.2 节：25° FOV、阻尼、极角限制与双击平滑复位。
 function setupCamera() {
   const camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, 800);
+  const CAM_OFFSET = new THREE.Vector3(0, 7, 12);
+  const CAM_TARGET_OFFSET = new THREE.Vector3(0, 1.2, 0);
   let walking = false;
   let followPlayer = null;
   // 观景模式保持微缩取景；步行模式使用近距离的游戏镜头。
@@ -81,24 +90,67 @@ function setupCamera() {
   const resetFromTarget = new THREE.Vector3();
   const resetToPosition = initialPosition.clone();
   const resetToTarget = initialTarget.clone();
-  renderer.domElement.addEventListener('dblclick', () => {
+
+  function resetView() {
     resetFromPosition.copy(camera.position);
     resetFromTarget.copy(controls.target);
     if (walking && followPlayer) {
-      resetToPosition.copy(followPlayer.position).add(new THREE.Vector3(0, 7, 12));
-      resetToTarget.copy(followPlayer.position).add(new THREE.Vector3(0, 1.2, 0));
+      resetToPosition.copy(followPlayer.position).add(CAM_OFFSET);
+      resetToTarget.copy(followPlayer.position).add(CAM_TARGET_OFFSET);
     } else {
       resetToPosition.copy(initialPosition);
       resetToTarget.copy(initialTarget);
     }
     resetElapsed = 0;
+  }
+  renderer.domElement.addEventListener('dblclick', (event) => {
+    if (!event.sourceCapabilities?.firesTouchEvents) resetView();
   });
+
+  // 触屏不会触发 dblclick：用两次轻点补上复位入口，多指手势不计入。
+  let touchStart = null;
+  let lastTap = null;
+  renderer.domElement.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1) {
+      touchStart = lastTap = null;
+      return;
+    }
+    const { clientX, clientY } = event.touches[0];
+    touchStart = { x: clientX, y: clientY, time: performance.now() };
+  }, { passive: true });
+  renderer.domElement.addEventListener('touchmove', (event) => {
+    if (!touchStart) return;
+    const { clientX, clientY } = event.touches[0];
+    if (Math.hypot(clientX - touchStart.x, clientY - touchStart.y) > 12) {
+      touchStart = lastTap = null;
+    }
+  }, { passive: true });
+  renderer.domElement.addEventListener('touchend', (event) => {
+    if (event.touches.length > 0) return;
+    const start = touchStart;
+    touchStart = null;
+    const now = performance.now();
+    if (!start || now - start.time > 250) { lastTap = null; return; }
+    if (lastTap && now - lastTap.time < 320 && Math.hypot(start.x - lastTap.x, start.y - lastTap.y) < 24) {
+      lastTap = null;
+      resetView();
+    } else {
+      lastTap = { x: start.x, y: start.y, time: now };
+    }
+  }, { passive: true });
+  renderer.domElement.addEventListener('touchcancel', () => { touchStart = lastTap = null; }, { passive: true });
+
+  const followWanted = new THREE.Vector3();
+  const followOffset = new THREE.Vector3();
+
   function update(delta) {
     if (walking && followPlayer && resetElapsed < 0) {
-      const wanted = new THREE.Vector3(followPlayer.position.x, followPlayer.position.y + 1.2, followPlayer.position.z);
-      const before = controls.target.clone();
-      controls.target.lerp(wanted, Math.min(1, delta * 7));
-      camera.position.add(controls.target.clone().sub(before));
+      followWanted.copy(followPlayer.position).add(CAM_TARGET_OFFSET);
+      followOffset.copy(controls.target);
+      // 指数衰减：低帧率下不会抖动或滞后。
+      controls.target.lerp(followWanted, 1 - Math.exp(-7 * delta));
+      followOffset.subVectors(controls.target, followOffset);
+      camera.position.add(followOffset);
     }
     if (resetElapsed >= 0) {
       resetElapsed = Math.min(0.8, resetElapsed + delta);
@@ -125,8 +177,8 @@ function setupCamera() {
     controls.maxPolarAngle = enabled ? 1.35 : Math.PI * 0.46;
     controls.enablePan = !enabled;
     if (enabled) {
-      camera.position.copy(player.position).add(new THREE.Vector3(0, 7, 12));
-      controls.target.copy(player.position).add(new THREE.Vector3(0, 1.2, 0));
+      camera.position.copy(player.position).add(CAM_OFFSET);
+      controls.target.copy(player.position).add(CAM_TARGET_OFFSET);
     } else {
       camera.position.copy(initialPosition);
       controls.target.copy(initialTarget);
@@ -139,7 +191,7 @@ function setupCamera() {
 
 const view = setupCamera();
 
-// 第 6.1 节的 M1 部分：天空保持明亮的蓝色渐变，后续里程碑添加云、太阳盘和彩虹。
+// 第 6.1 节：天空渐变 + 太阳方向暖晕，为 M6 的太阳盘与光柱预留同一套方向参数。
 function setupSky() {
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -149,6 +201,8 @@ function setupSky() {
     uniforms: {
       topColor: { value: new THREE.Color('#4FA3E8') },
       horizonColor: { value: new THREE.Color('#BFE6FF') },
+      sunDir: { value: STATE.sunDir.clone() },
+      sunColor: { value: new THREE.Color('#FFE7B8') },
     },
     vertexShader: `varying vec3 vDirection;
       void main() {
@@ -157,10 +211,20 @@ function setupSky() {
       }`,
     fragmentShader: `uniform vec3 topColor;
       uniform vec3 horizonColor;
+      uniform vec3 sunDir;
+      uniform vec3 sunColor;
       varying vec3 vDirection;
       void main() {
-        float height = smoothstep(-0.08, 0.8, normalize(vDirection).y);
-        gl_FragColor = vec4(mix(horizonColor, topColor, height), 1.0);
+        vec3 dir = normalize(vDirection);
+        float height = smoothstep(-0.08, 0.8, dir.y);
+        vec3 col = mix(horizonColor, topColor, height);
+
+        // 太阳方向的柔和暖晕，以及贴近地平线时的暖边。
+        float sunAmount = max(dot(dir, normalize(sunDir)), 0.0);
+        col = mix(col, sunColor, pow(sunAmount, 6.0) * 0.55);
+        col = mix(col, sunColor, pow(max(1.0 - abs(dir.y), 0.0), 8.0) * pow(sunAmount, 2.0) * 0.25);
+
+        gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }`,
   });
@@ -169,18 +233,25 @@ function setupSky() {
   scene.add(sky);
 }
 
-// 第 6.2 节的 M1 部分：日光足够强，阴影相机紧贴岛台范围。
+// 第 6.2 节：主光压到 2.6，用冷色补光把阴影从灰救回冷调；阴影相机覆盖灯塔与防波堤。
 function setupLights() {
-  const sun = new THREE.DirectionalLight(STATE.sunColor, 3.0);
+  const sun = new THREE.DirectionalLight(STATE.sunColor, 2.6);
   sun.position.copy(STATE.sunDir).multiplyScalar(80);
   sun.target.position.set(0, 0, 0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -47, right: 47, top: 47, bottom: -47, near: 1, far: 190 });
+  Object.assign(sun.shadow.camera, { left: -54, right: 54, top: 54, bottom: -54, near: 1, far: 200 });
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.02;
   scene.add(sun, sun.target);
-  scene.add(new THREE.HemisphereLight('#BFE6FF', '#F2D9A0', 0.6));
+
+  // 天顶偏冷蓝、地面反弹偏暖沙：阴影里就会带冷调而不是发灰。
+  scene.add(new THREE.HemisphereLight('#A8D8FF', '#F2C89A', 0.85));
+
+  // 反向冷色补光，让背光面保留形体转折。
+  const rim = new THREE.DirectionalLight('#BFD8FF', 0.45);
+  rim.position.set(-STATE.sunDir.x * 40, 20, -STATE.sunDir.z * 40);
+  scene.add(rim);
 }
 
 function flatMaterial(color) {
@@ -198,7 +269,7 @@ function addShadowMesh(geometry, material, x, y, z, outline = true) {
   return mesh;
 }
 
-// 第 5 节的 M1 部分：海水圆盘、分层岛台剖面与前侧陆地轮廓。
+// 第 5 节：海水圆盘、分层岛台剖面与前侧陆地轮廓。
 function setupIsland() {
   const soilDark = flatMaterial('#6B4530');
   const soil = flatMaterial('#B07848');
@@ -211,14 +282,7 @@ function setupIsland() {
   sea.castShadow = false;
 
   // ShapeGeometry 的纵轴经旋转后映射到世界 Z；海岸线用固定控制点形成弯曲。
-  const land = new THREE.Shape();
-  land.moveTo(COAST[0][0], -COAST[0][1]);
-  for (let i = 1; i < COAST.length; i++) land.lineTo(COAST[i][0], -COAST[i][1]);
-  for (let i = 0; i <= 48; i++) {
-    const angle = Math.PI * i / 48;
-    land.lineTo(Math.cos(angle) * (ISLAND_R - 1), -Math.sin(angle) * (ISLAND_R - 1));
-  }
-  land.closePath();
+  const land = makeLandOutline();
   const grassMesh = addShadowMesh(new THREE.ShapeGeometry(land, 24), grass, 0, -0.29, 0, false);
   grassMesh.rotation.x = -Math.PI / 2;
   grassMesh.castShadow = false;
@@ -233,11 +297,45 @@ function setupIsland() {
   beachMesh.castShadow = false;
 }
 
+function makeLandOutline() {
+  const land = new THREE.Shape();
+  land.moveTo(COAST[0][0], -COAST[0][1]);
+  for (let i = 1; i < COAST.length; i++) land.lineTo(COAST[i][0], -COAST[i][1]);
+  for (let i = 0; i <= 48; i++) {
+    const angle = Math.PI * i / 48;
+    land.lineTo(Math.cos(angle) * (ISLAND_R - 1), -Math.sin(angle) * (ISLAND_R - 1));
+  }
+  land.closePath();
+  return land;
+}
+
+// 用陆地的轮廓生成柔和的接触阴影，交给水面着色器随波绘制。
+function createWaterShadow() {
+  const size = 512;
+  const radius = ISLAND_R * 1.2;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+  ctx.shadowBlur = 26;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  makeLandOutline().getPoints().forEach(({ x, y }, index) => {
+    const px = size * (x + radius) / (2 * radius);
+    const py = size * (radius - y) / (2 * radius);
+    if (index === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.closePath();
+  ctx.fill();
+  return { texture: new THREE.CanvasTexture(canvas), diameter: 2 * radius };
+}
+
 setupSky();
 setupLights();
 setupIsland();
 const weather = createWeatherUniforms(STATE);
-const water = createWater(scene, weather);
+createWater(scene, weather, createWaterShadow());
 addHarbor(scene);
 addHouses(scene);
 addRoutes(scene);
@@ -250,6 +348,24 @@ mergeToonMeshes(scene, { skipDynamic: true });
 const game = createPlayerController(scene, view.camera);
 const minimap = createMinimap(game.player);
 
+function placeName(position) {
+  if (game.surfaceName !== '渔村草地') return game.surfaceName;
+  const { x, z } = position;
+  if (Math.hypot(x - 19, z - 23) <= 3.5) return '鸟居';
+  return z > 5 ? '渔村' : '港区';
+}
+
+// HUD 每 0.25 秒刷新一次，避免每帧写 DOM 触发样式重算。
+let hudElapsed = 1;
+function updateHud(force = false) {
+  if (!force && hudElapsed < 0.25) return;
+  hudElapsed = 0;
+  perf.textContent = `Draw ${renderer.info.render.calls}`;
+  const p = game.player.position;
+  gameStatus.textContent = placeName(p);
+  gameCoords.textContent = `X ${p.x.toFixed(1)} · Z ${p.z.toFixed(1)}`;
+}
+
 const modeToggle = document.querySelector('#mode-toggle');
 const caption = document.querySelector('#caption');
 function setMode(walking) {
@@ -260,6 +376,7 @@ function setMode(walking) {
   caption.innerHTML = walking
     ? '<strong>太阳雨 · 小渔港</strong>WASD / 方向键移动 · Shift 快跑 · 空格跳跃 · 拖动转镜头 · V 观景 · M 地图'
     : '<strong>太阳雨 · 小渔港</strong>拖动旋转 / 滚轮缩放 / 右键平移 / 双击复位 · V 步行 · M 地图';
+  updateHud(true);
 }
 modeToggle.addEventListener('click', () => setMode(!game.active));
 window.addEventListener('keydown', (event) => {
@@ -269,6 +386,8 @@ setMode(true);
 
 // 第 8 节：窗口适配与后台暂停；delta 截断以避免恢复页面时的跳变。
 window.addEventListener('resize', () => {
+  // 换显示器或改系统缩放后像素比会变，必须重算。
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   view.camera.aspect = window.innerWidth / window.innerHeight;
   view.fitNarrowScreen();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -285,6 +404,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+let firstFrame = true;
 function animate() {
   if (!running) return;
   const delta = Math.min(clock.getDelta(), 0.05);
@@ -296,8 +416,14 @@ function animate() {
   updateBoats(boats, STATE.time);
   updateProps(props, STATE.time);
   renderer.render(scene, view.camera);
-  perf.textContent = `Draw Calls: ${renderer.info.render.calls}`;
+  hudElapsed += delta;
+  updateHud();
+  // 首帧渲染完成后才收起加载屏，避免出现纯色空屏。
+  if (firstFrame) {
+    firstFrame = false;
+    updateHud(true);
+    loading.classList.add('hidden');
+  }
 }
 
 renderer.setAnimationLoop(animate);
-requestAnimationFrame(() => loading.classList.add('hidden'));

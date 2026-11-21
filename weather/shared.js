@@ -2,6 +2,7 @@
 import { sharedUniforms } from '../toon/materials.js';
 
 export function createWeatherUniforms(state) {
+  sharedUniforms.uWetness.value = state.wetness;
   return {
     uTime: { value: 0 },
     uRainDensity: { value: state.rain },
