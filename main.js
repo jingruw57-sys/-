@@ -3,19 +3,23 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeToonMaterial, addOutline } from './toon/materials.js';
 import { addBoats, updateBoats } from './world/boats.js';
-import { addHarbor } from './world/harbor.js';
-import { addHouses } from './world/houses.js';
+import { addHarbor } from './world/harbor.js?v=map-11';
+import { addHouses, updateHouses } from './world/houses.js?v=map-8';
 import { addProps, updateProps } from './world/props.js';
-import { createWater, COAST } from './world/water.js?v=map-3';
+import { createWater, COAST, WATER_COLORS } from './world/water.js?v=map-9';
 import { createWeatherUniforms } from './weather/shared.js?v=map-3';
 import { createRain } from './weather/rain.js';
 import { createSplashes } from './weather/splashes.js';
 import { createPuddles } from './world/puddles.js';
 import { ISLAND_R, SAFE_R, WATER_Y } from './world/constants.js';
-import { mergeToonMeshes } from './world/merge.js';
-import { createPlayerController } from './game/player.js?v=map-3';
-import { addRoutes } from './world/routes.js';
-import { createMinimap } from './game/minimap.js';
+import { mergeToonMeshes } from './world/merge.js?v=map-7';
+import { createPlayerController } from './game/player.js?v=map-11';
+import { addRoutes } from './world/routes.js?v=map-4';
+import { createMinimap } from './game/minimap.js?v=map-9';
+import { addBeach, BEACH, BEACH_WATERLINE_RADIUS } from './world/beach.js';
+import { createInteractions } from './game/interactions.js?v=map-11';
+import { createAmbience } from './weather/audio.js?v=map-11';
+import { createDynamicWeather } from './weather/dynamic.js?v=map-11';
 
 const app = document.querySelector('#app');
 const loading = document.querySelector('#loading');
@@ -95,8 +99,8 @@ function setupCamera() {
     resetFromPosition.copy(camera.position);
     resetFromTarget.copy(controls.target);
     if (walking && followPlayer) {
-      resetToPosition.copy(followPlayer.position).add(CAM_OFFSET);
       resetToTarget.copy(followPlayer.position).add(CAM_TARGET_OFFSET);
+      resetToPosition.copy(followPlayer.position).add(CAM_OFFSET);
     } else {
       resetToPosition.copy(initialPosition);
       resetToTarget.copy(initialTarget);
@@ -273,13 +277,14 @@ function addShadowMesh(geometry, material, x, y, z, outline = true) {
 function setupIsland() {
   const soilDark = flatMaterial('#6B4530');
   const soil = flatMaterial('#B07848');
-  const water = flatMaterial('#4CC4C9');
+  const water = flatMaterial(WATER_COLORS.abyss);
   const grass = flatMaterial('#8CC65A');
   const sand = flatMaterial('#F2D9A0');
   addShadowMesh(new THREE.CylinderGeometry(ISLAND_R, ISLAND_R - 0.5, 2.1, 112), soilDark, 0, -2.5, 0);
   addShadowMesh(new THREE.CylinderGeometry(ISLAND_R, ISLAND_R, 0.85, 112), soil, 0, -1.05, 0);
-  const sea = addShadowMesh(new THREE.CylinderGeometry(ISLAND_R, ISLAND_R, 0.3, 112), water, 0, WATER_Y - 0.155, 0, false);
-  sea.castShadow = false;
+  // 仅保留侧壁。封顶圆盘在波谷时会盖住真正的水面。
+  const seaWall = new THREE.CylinderGeometry(ISLAND_R, ISLAND_R, 0.3, 112, 1, true);
+  addShadowMesh(seaWall, water, 0, WATER_Y - 0.155, 0, false).castShadow = false;
 
   // ShapeGeometry 的纵轴经旋转后映射到世界 Z；海岸线用固定控制点形成弯曲。
   const land = makeLandOutline();
@@ -327,6 +332,12 @@ function createWaterShadow() {
     else ctx.lineTo(px, py);
   });
   ctx.closePath();
+  ctx.moveTo(size * (BEACH.x + BEACH_WATERLINE_RADIUS + radius) / (2 * radius), size * (radius + BEACH.z) / (2 * radius));
+  ctx.arc(
+    size * (BEACH.x + radius) / (2 * radius),
+    size * (radius + BEACH.z) / (2 * radius),
+    size * BEACH_WATERLINE_RADIUS / (2 * radius), 0, Math.PI * 2,
+  );
   ctx.fill();
   return { texture: new THREE.CanvasTexture(canvas), diameter: 2 * radius };
 }
@@ -334,10 +345,11 @@ function createWaterShadow() {
 setupSky();
 setupLights();
 setupIsland();
+addBeach(scene);
 const weather = createWeatherUniforms(STATE);
 createWater(scene, weather, createWaterShadow());
-addHarbor(scene);
-addHouses(scene);
+const lighthouseLens = addHarbor(scene);
+const houses = addHouses(scene);
 addRoutes(scene);
 const boats = addBoats(scene);
 const props = addProps(scene);
@@ -345,8 +357,28 @@ createPuddles(scene, weather);
 createRain(scene, view.controls.target, weather);
 createSplashes(scene, weather);
 mergeToonMeshes(scene, { skipDynamic: true });
-const game = createPlayerController(scene, view.camera);
+const game = createPlayerController(scene, view.camera, houses);
 const minimap = createMinimap(game.player);
+const ambience = createAmbience();
+const dynamicWeather = createDynamicWeather(STATE, weather, {
+  steps: reduceMotion ? [0.10, 0.18, 0.26, 0.34] : undefined,
+  onChange: ambience.setRain,
+});
+const interactions = createInteractions(scene, game.player, {
+  play: ambience.play,
+  groundAt: game.groundAt,
+  lighthouseLens,
+});
+
+const soundToggle = document.querySelector('#sound-toggle');
+soundToggle.addEventListener('click', async () => {
+  soundToggle.disabled = true;
+  const enabled = !ambience.enabled;
+  const ok = await ambience.setEnabled(enabled);
+  soundToggle.disabled = false;
+  soundToggle.setAttribute('aria-pressed', String(ambience.enabled));
+  soundToggle.textContent = ok ? (enabled ? '声音开' : '声音关') : '声音不可用';
+});
 
 function placeName(position) {
   if (game.surfaceName !== '渔村草地') return game.surfaceName;
@@ -368,19 +400,50 @@ function updateHud(force = false) {
 
 const modeToggle = document.querySelector('#mode-toggle');
 const caption = document.querySelector('#caption');
+const doorButton = document.querySelector('#door-action');
+const useButton = document.querySelector('#use-btn');
+function updateDoorAction(nearby) {
+  const hide = !nearby;
+  if (doorButton.hidden !== hide) doorButton.hidden = hide;
+  if (!nearby) return;
+  if (doorButton.disabled !== nearby.occupied) doorButton.disabled = nearby.occupied;
+  const label = nearby.occupied ? '退开门口' : nearby.door.open ? 'E · 关门' : 'E · 开门';
+  if (doorButton.textContent !== label) doorButton.textContent = label;
+}
+
+function updateGameActions(delta) {
+  const nearby = game.nearbyDoor;
+  updateDoorAction(nearby);
+  interactions.update(delta, game.active, !nearby);
+}
+
+function useAction() {
+  if (!game.active) return;
+  if (game.nearbyDoor) {
+    game.toggleDoor();
+    updateGameActions(0);
+  } else {
+    interactions.use();
+  }
+}
+
 function setMode(walking) {
   game.setActive(walking);
   view.setWalking(walking, game.player);
   document.body.classList.toggle('walking', walking);
   modeToggle.textContent = walking ? '切换观景' : '开始步行';
   caption.innerHTML = walking
-    ? '<strong>太阳雨 · 小渔港</strong>WASD / 方向键移动 · Shift 快跑 · 空格跳跃 · 拖动转镜头 · V 观景 · M 地图'
+    ? '<strong>太阳雨 · 小渔港</strong>WASD / 方向键移动 · Shift 快跑 · 空格跳跃 · E 互动 · 拖动转镜头 · V 观景 · M 地图'
     : '<strong>太阳雨 · 小渔港</strong>拖动旋转 / 滚轮缩放 / 右键平移 / 双击复位 · V 步行 · M 地图';
   updateHud(true);
+  updateGameActions(0);
 }
 modeToggle.addEventListener('click', () => setMode(!game.active));
+doorButton.addEventListener('click', useAction);
+useButton.addEventListener('click', useAction);
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyV' && !event.repeat) setMode(!game.active);
+  if (event.code === 'KeyE' && !event.repeat) useAction();
 });
 setMode(true);
 
@@ -407,10 +470,15 @@ document.addEventListener('visibilitychange', () => {
 let firstFrame = true;
 function animate() {
   if (!running) return;
-  const delta = Math.min(clock.getDelta(), 0.05);
+  const elapsed = clock.getDelta();
+  const delta = Math.min(elapsed, 0.05);
   STATE.time += delta;
   weather.uTime.value = STATE.time;
+  dynamicWeather.update(elapsed);
   game.update(delta);
+  const indoorHouse = game.active ? game.indoorHouse : null;
+  updateHouses(houses, game.player.position, indoorHouse, delta);
+  updateGameActions(delta);
   minimap.update(delta);
   view.update(delta);
   updateBoats(boats, STATE.time);

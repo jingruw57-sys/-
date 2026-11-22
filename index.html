@@ -1,4 +1,4 @@
-<!-- 文件职责：太阳雨渔港游戏入口、模式按钮及触屏控制；对应指导书第 0、3、8、9 章和游戏扩展。 -->
+<!-- 文件职责：太阳雨渔港游戏入口、触屏控制、交互提示与声音开关。 -->
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -35,30 +35,52 @@
     #buttons button:hover { background: #fff; }
     #buttons button:active { transform: translateY(1px); }
     #buttons button:focus-visible { outline: 2px solid #D9574A; outline-offset: 2px; }
+    #sound-toggle[aria-pressed="true"] { background: #963e35; color: #fff; }
+    #door-action { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); border: 1px solid #2B2A3A55; border-radius: 12px; padding: 10px 14px; background: #F6F1E7ef; color: #2B2A3A; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+    #door-action:disabled { opacity: .7; cursor: default; }
 
     #minimap-panel { position: fixed; top: 58px; right: 12px; padding: 7px; border: 1px solid #2B2A3A55; border-radius: 16px; background: #F6F1E7e8; box-shadow: 0 5px 20px #2b2a3a22; }
     #minimap { display: block; width: 180px; height: 180px; }
+
+    #interact-hint { position: fixed; left: 50%; bottom: 90px; max-width: calc(100vw - 24px); transform: translate(-50%, 8px); display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: rgba(43, 42, 58, .88); color: #F6F1E7; font: 600 13px system-ui, sans-serif; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+    #interact-hint.show { opacity: 1; transform: translate(-50%, 0); }
+    #interact-hint kbd { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: #F6F1E7; color: #2B2A3A; font: 700 12px ui-monospace, monospace; }
+    #toast { position: fixed; left: 50%; top: 65px; width: max-content; max-width: min(420px, calc(100vw - 24px)); padding: 12px 18px; border-radius: 14px; background: rgba(246, 241, 231, .96); box-shadow: 0 8px 24px #2b2a3a28; color: #2B2A3A; opacity: 0; pointer-events: none; transform: translate(-50%, -8px); transition: opacity .22s ease, transform .22s ease; }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+    #toast-title { font: 700 14px system-ui, sans-serif; margin-bottom: 4px; }
+    #toast-body { font: 400 12.5px/1.6 system-ui, sans-serif; }
 
     /* 触屏控件避开 iPhone 底部工具栏 */
     #joystick { display: none; position: fixed; left: 18px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); width: 120px; height: 120px; border: 2px solid #2B2A3A66; border-radius: 50%; background: #f6f1e780; touch-action: none; user-select: none; }
     #stick { position: absolute; width: 50px; height: 50px; left: 33px; top: 33px; border-radius: 50%; background: #D9574Acc; border: 2px solid #2B2A3A88; pointer-events: none; }
     #jump-btn { display: none; position: fixed; right: 20px; bottom: calc(42px + env(safe-area-inset-bottom, 0px)); width: 76px; height: 76px; border: 2px solid #2B2A3A66; border-radius: 50%; background: #F6F1E7cc; color: #2B2A3A; font: 600 15px system-ui, sans-serif; touch-action: none; }
+    #use-btn { display: none; position: fixed; right: 27px; bottom: calc(128px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; border: 2px solid #2B2A3A66; border-radius: 50%; background: #FFE9A8ee; color: #2B2A3A; font: 700 14px system-ui, sans-serif; touch-action: manipulation; }
 
     @media (pointer: coarse), (max-width: 700px) {
-      body.walking #joystick, body.walking #jump-btn { display: block; }
+      body.walking #joystick, body.walking #jump-btn, body.walking #use-btn { display: block; }
       #hud { top: 10px; left: 10px; font-size: 10px; }
-      #game-coords { display: none; }
+      #game-coords, #perf { display: none; }
+      #hud #game-status { margin-left: 0; padding-left: 0; border: 0; max-width: 5.3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #buttons { top: 10px; right: 10px; gap: 6px; }
       #buttons button { padding: 7px 10px; font-size: 12px; }
       #caption { left: 10px; right: 10px; top: 58px; bottom: auto; max-width: none; font-size: 11px; }
       #minimap-panel { top: 142px; }
       #minimap { width: 155px; height: 155px; }
+      #interact-hint { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+      #interact-hint kbd { display: none; }
+      #toast { top: auto; bottom: calc(206px + env(safe-area-inset-bottom, 0px)); }
     }
 
     @media (prefers-reduced-motion: reduce) {
       #loading, #loading.hidden { transition: none; }
       #loading .bar::after { animation: none; width: 132px; opacity: .6; }
-      #buttons button { transition: none; }
+      #buttons button, #interact-hint, #toast { transition: none; }
+    }
+
+    @media (max-width: 420px) {
+      #hud { top: 47px; }
+      #caption { top: 80px; }
+      #minimap-panel { top: 166px; }
     }
   </style>
   <script type="importmap">
@@ -75,15 +97,24 @@
     <span id="perf" aria-live="off">Draw —</span>
     <span id="game-status" aria-live="off">渔村</span>
     <span id="game-coords">X -3.2 · Z 8.8</span>
+    <span id="collect-count" aria-live="polite">海玻璃 0 / 12</span>
   </div>
   <div id="buttons">
     <button id="map-toggle" type="button" aria-expanded="false" aria-controls="minimap-panel">地图</button>
     <button id="mode-toggle" type="button">切换观景</button>
+    <button id="sound-toggle" type="button" aria-label="环境音与互动音效" aria-pressed="false">声音关</button>
   </div>
   <div id="caption"><strong>太阳雨 · 小渔港</strong>拖动旋转 / 滚轮或双指缩放 / 右键或双指平移 / 双击复位 · 扩大版港口</div>
   <aside id="minimap-panel" aria-label="渔港地图" hidden><canvas id="minimap" width="220" height="220" aria-label="渔港位置与朝向"></canvas></aside>
   <div id="joystick" role="group" aria-label="移动摇杆"><div id="stick"></div></div>
   <button id="jump-btn" type="button" aria-label="跳跃">跳跃</button>
-  <script type="module" src="./main.js?v=map-3"></script>
+  <button id="door-action" type="button" hidden>开门</button>
+  <div id="interact-hint" aria-hidden="true"><kbd>E</kbd><span class="label"></span></div>
+  <div id="toast" role="status" aria-atomic="true">
+    <div id="toast-title"></div>
+    <div id="toast-body"></div>
+  </div>
+  <button id="use-btn" type="button" hidden>互动</button>
+  <script type="module" src="./main.js?v=map-11"></script>
 </body>
 </html>

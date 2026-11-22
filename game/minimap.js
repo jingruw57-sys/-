@@ -1,9 +1,10 @@
 // 文件职责：可收起的俯视地图，显示村道、建筑、码头和玩家朝向；游戏地图扩展。
 import { ISLAND_R } from '../world/constants.js';
-import { shoreZ } from '../world/water.js';
-import { HOUSE_LAYOUT } from '../world/houses.js';
+import { shoreZ, WATER_COLORS } from '../world/water.js?v=map-9';
+import { HOUSE_LAYOUT, HOUSE_STYLE } from '../world/houses.js?v=map-8';
 import { TREE_LAYOUT } from '../world/props.js';
-import { ROUTES } from '../world/routes.js';
+import { ROUTES } from '../world/routes.js?v=map-4';
+import { BEACH, BEACH_WATERLINE_RADIUS } from '../world/beach.js';
 
 const SIZE = 220;
 const SCALE = 2.48;
@@ -16,7 +17,12 @@ function drawStatic(ctx) {
   ctx.beginPath();
   ctx.arc(110, 110, ISLAND_R * SCALE, 0, Math.PI * 2);
   ctx.clip();
-  ctx.fillStyle = '#4CC4C9';
+  const waterFill = ctx.createLinearGradient(0, toY(-2), 0, toY(-26));
+  waterFill.addColorStop(0, WATER_COLORS.shallow);
+  waterFill.addColorStop(4.5 / 24, WATER_COLORS.mid);
+  waterFill.addColorStop(12 / 24, WATER_COLORS.deep);
+  waterFill.addColorStop(1, WATER_COLORS.abyss);
+  ctx.fillStyle = waterFill;
   ctx.fillRect(0, 0, SIZE, SIZE);
   ctx.beginPath();
   ctx.moveTo(toX(-38), toY(shoreZ(-38)));
@@ -25,6 +31,10 @@ function drawStatic(ctx) {
   ctx.lineTo(toX(-38), toY(38));
   ctx.closePath();
   ctx.fillStyle = '#8CC65A';
+  ctx.fill();
+  ctx.fillStyle = BEACH.sandColor;
+  ctx.beginPath();
+  ctx.arc(toX(BEACH.x), toY(BEACH.z), BEACH_WATERLINE_RADIUS * SCALE, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = '#B07848';
@@ -51,10 +61,16 @@ function drawStatic(ctx) {
   for (const x of [-13, 0, 13]) {
     ctx.beginPath(); ctx.moveTo(toX(x), toY(-2)); ctx.lineTo(toX(x), toY(-9.7)); ctx.stroke();
   }
-  for (const [x, z, w, d, color] of HOUSE_LAYOUT) {
+  HOUSE_LAYOUT.forEach(([x, z, w, d, color], index) => {
     ctx.fillStyle = ['#D9574A', '#4A7FB5', '#709A8D'][color];
-    ctx.fillRect(toX(x) - w * SCALE / 2, toY(z) - d * SCALE / 2, w * SCALE, d * SCALE);
-  }
+    const box = [toX(x) - w * SCALE / 2, toY(z) - d * SCALE / 2, w * SCALE, d * SCALE];
+    ctx.fillRect(...box);
+    if (HOUSE_STYLE[index].interior) {
+      ctx.strokeStyle = '#FFF8EC';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(...box);
+    }
+  });
   ctx.fillStyle = '#4E8A4A';
   for (const [x, z] of TREE_LAYOUT) {
     ctx.beginPath(); ctx.arc(toX(x), toY(z), 3, 0, Math.PI * 2); ctx.fill();
@@ -65,6 +81,7 @@ function drawStatic(ctx) {
   ctx.fillText('渔港', toX(0), toY(-16));
   ctx.fillText('鱼市', toX(3), toY(7));
   ctx.fillText('鸟居', toX(19), toY(22));
+  ctx.fillText('沙滩', toX(BEACH.x), toY(BEACH.z - 2));
   ctx.restore();
   ctx.strokeStyle = '#2B2A3A';
   ctx.lineWidth = 2;

@@ -94,7 +94,8 @@ export function addHarbor(scene) {
       i % 2 ? red : white, 0, 0.65 + i * 0.81, 0);
   }
   part(lighthouse, new THREE.CylinderGeometry(1.0, 1.0, 0.17, 12), stoneDark, 0, 4.78, 0);
-  part(lighthouse, new THREE.CylinderGeometry(0.72, 0.72, 0.78, 12), glass, 0, 5.2, 0);
+  const lens = part(lighthouse, new THREE.CylinderGeometry(0.72, 0.72, 0.78, 12), glass, 0, 5.2, 0);
   part(lighthouse, new THREE.ConeGeometry(1.1, 0.72, 12), red, 0, 5.97, 0);
   part(lighthouse, new THREE.BoxGeometry(0.48, 0.8, 0.08), woodDark, 0, 0.82, 0.95, false);
+  return lens.getWorldPosition(new THREE.Vector3());
 }

@@ -19,9 +19,10 @@ export function makeToonMaterial(color, options = {}) {
   const side = options.side ?? THREE.FrontSide;
   const emissive = options.emissive ?? '#000000';
   const emissiveIntensity = options.emissiveIntensity ?? 1;
-  const key = `${color}|${side}|${emissive}|${emissiveIntensity}`;
+  const vertexColors = options.vertexColors ?? false;
+  const key = `${color}|${side}|${emissive}|${emissiveIntensity}|${vertexColors}`;
   if (materialCache.has(key)) return materialCache.get(key);
-  const material = new THREE.MeshLambertMaterial({ color, side, emissive, emissiveIntensity });
+  const material = new THREE.MeshLambertMaterial({ color, side, emissive, emissiveIntensity, vertexColors });
   material.userData.isToon = true;
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, sharedUniforms);
